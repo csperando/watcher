@@ -1,0 +1,751 @@
+<!DOCTYPE html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <title>Multi-Monitor Detection Playground</title>
+        <style>
+            :root {
+                color-scheme: dark;
+                --bg: #0f1117;
+                --panel: #161923;
+                --panel-border: #262b3a;
+                --text: #e6e8ef;
+                --muted: #8b90a3;
+                --accent: #7c9aff;
+                --yes: #35d399;
+                --yes-bg: rgba(53, 211, 153, 0.12);
+                --no: #ff6b81;
+                --no-bg: rgba(255, 107, 129, 0.12);
+                --warn: #ffb454;
+                --warn-bg: rgba(255, 180, 84, 0.12);
+                --unknown: #8b90a3;
+                --unknown-bg: rgba(139, 144, 163, 0.12);
+                font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
+            }
+
+            * { box-sizing: border-box; }
+
+            body {
+                margin: 0;
+                background: radial-gradient(circle at top, #171a24, #0b0d13 65%);
+                color: var(--text);
+                min-height: 100vh;
+                padding: 32px 24px 64px;
+            }
+
+            header {
+                max-width: 980px;
+                margin: 0 auto 28px;
+                text-align: center;
+            }
+
+            header h1 {
+                margin: 0 0 8px;
+                font-size: 1.9rem;
+                letter-spacing: -0.02em;
+            }
+
+            header p {
+                color: var(--muted);
+                margin: 0;
+                font-size: 0.95rem;
+                line-height: 1.5;
+            }
+
+            .hero {
+                max-width: 980px;
+                margin: 0 auto 32px;
+                padding: 28px;
+                border-radius: 16px;
+                border: 1px solid var(--panel-border);
+                background: var(--panel);
+                display: flex;
+                align-items: center;
+                justify-content: space-between;
+                gap: 20px;
+                flex-wrap: wrap;
+            }
+
+            .hero-label {
+                font-size: 0.8rem;
+                text-transform: uppercase;
+                letter-spacing: 0.08em;
+                color: var(--muted);
+                margin-bottom: 6px;
+            }
+
+            .hero-verdict {
+                font-size: 2rem;
+                font-weight: 700;
+            }
+
+            .hero-verdict.yes { color: var(--yes); }
+            .hero-verdict.no { color: var(--no); }
+            .hero-verdict.unknown { color: var(--unknown); }
+
+            .hero-sub {
+                color: var(--muted);
+                font-size: 0.85rem;
+                margin-top: 6px;
+            }
+
+            .hero-count {
+                font-size: 3rem;
+                font-weight: 800;
+                color: var(--accent);
+                line-height: 1;
+                text-align: right;
+            }
+
+            .hero-count small {
+                display: block;
+                font-size: 0.7rem;
+                font-weight: 500;
+                color: var(--muted);
+                text-transform: uppercase;
+                letter-spacing: 0.08em;
+                margin-top: 4px;
+            }
+
+            main {
+                max-width: 980px;
+                margin: 0 auto;
+                display: grid;
+                grid-template-columns: repeat(auto-fit, minmax(420px, 1fr));
+                gap: 18px;
+            }
+
+            .card {
+                background: var(--panel);
+                border: 1px solid var(--panel-border);
+                border-radius: 14px;
+                padding: 20px 22px;
+                display: flex;
+                flex-direction: column;
+                gap: 10px;
+            }
+
+            .card-head {
+                display: flex;
+                align-items: flex-start;
+                justify-content: space-between;
+                gap: 12px;
+            }
+
+            .card-title {
+                font-size: 1.02rem;
+                font-weight: 600;
+                margin: 0;
+            }
+
+            .card-desc {
+                color: var(--muted);
+                font-size: 0.85rem;
+                line-height: 1.5;
+                margin: 0;
+            }
+
+            .badge {
+                flex-shrink: 0;
+                padding: 4px 10px;
+                border-radius: 999px;
+                font-size: 0.72rem;
+                font-weight: 700;
+                text-transform: uppercase;
+                letter-spacing: 0.04em;
+                white-space: nowrap;
+            }
+
+            .badge.yes { color: var(--yes); background: var(--yes-bg); }
+            .badge.no { color: var(--no); background: var(--no-bg); }
+            .badge.warn { color: var(--warn); background: var(--warn-bg); }
+            .badge.unknown { color: var(--unknown); background: var(--unknown-bg); }
+
+            .card pre {
+                margin: 0;
+                background: #0b0d13;
+                border: 1px solid var(--panel-border);
+                border-radius: 8px;
+                padding: 12px 14px;
+                font-size: 0.78rem;
+                line-height: 1.55;
+                overflow-x: auto;
+                color: #c6cbe0;
+            }
+
+            .card button {
+                align-self: flex-start;
+                background: var(--accent);
+                color: #0b0d13;
+                border: none;
+                padding: 8px 16px;
+                border-radius: 8px;
+                font-size: 0.82rem;
+                font-weight: 600;
+                cursor: pointer;
+            }
+
+            .card button:hover { filter: brightness(1.08); }
+            .card button:disabled { opacity: 0.5; cursor: default; }
+
+            .hint {
+                font-size: 0.78rem;
+                color: var(--warn);
+                background: var(--warn-bg);
+                border-radius: 8px;
+                padding: 8px 12px;
+                line-height: 1.5;
+            }
+
+            footer {
+                max-width: 980px;
+                margin: 40px auto 0;
+                text-align: center;
+                color: var(--muted);
+                font-size: 0.78rem;
+            }
+
+            details {
+                max-width: 980px;
+                margin: 28px auto 0;
+                color: var(--muted);
+                font-size: 0.85rem;
+            }
+
+            details summary {
+                cursor: pointer;
+                color: var(--text);
+                font-weight: 600;
+                margin-bottom: 10px;
+            }
+        </style>
+    </head>
+    <body>
+
+    <header>
+    <h1>Multi-Monitor Detection Playground</h1>
+    <p>
+        A site can tell you have a second display without ever asking for permission.
+        This page reproduces several of the techniques and reacts live as you plug in,
+        unplug, or drag windows between monitors.
+    </p>
+    </header>
+
+    <div class="hero">
+        <div>
+            <div class="hero-label">Overall verdict</div>
+            <div class="hero-verdict unknown" id="hero-verdict">Checking&hellip;</div>
+            <div class="hero-sub" id="hero-sub">Based on the strongest signal available in this browser.</div>
+        </div>
+        <div class="hero-count" id="hero-count">
+            <!--
+                &mdash;
+                <small>screens (if known)</small>
+            -->
+        </div>
+    </div>
+
+    <main>
+
+    <!-- 1. screen.isExtended -->
+    <section class="card">
+        <div class="card-head">
+        <h2 class="card-title">1. Window Management API &mdash; <code>screen.isExtended</code></h2>
+        <span class="badge unknown" id="badge-isExtended">checking</span>
+        </div>
+        <p class="card-desc">
+        A boolean flag exposed directly on <code>window.screen</code>, no permission prompt required.
+        It was added specifically because sites were already inferring this via hackier means &mdash;
+        this is almost certainly what the site you saw was using.
+        </p>
+        <pre id="out-isExtended"></pre>
+    </section>
+
+    <!-- 2. getScreenDetails() -->
+    <section class="card">
+        <div class="card-head">
+        <h2 class="card-title">2. Window Management API &mdash; <code>getScreenDetails()</code></h2>
+        <span class="badge unknown" id="badge-details">not requested</span>
+        </div>
+        <p class="card-desc">
+        The full API. Returns every connected screen with position, size and primary/internal
+        flags &mdash; but <em>does</em> require a user gesture and a permission grant.
+        </p>
+        <button id="btn-details">Request screen details&hellip;</button>
+        <pre id="out-details">(not requested yet)</pre>
+    </section>
+
+    <!-- 3. Permissions API state -->
+    <section class="card">
+        <div class="card-head">
+        <h2 class="card-title">3. Permissions API state (no prompt)</h2>
+        <span class="badge unknown" id="badge-perm">checking</span>
+        </div>
+        <p class="card-desc">
+        <code>navigator.permissions.query()</code> can silently check whether the
+        <code>window-management</code> permission is granted/denied/prompt &mdash; without ever
+        showing the user a dialog. A prior grant lets a site skip straight to method&nbsp;2.
+        </p>
+        <pre id="out-perm"></pre>
+    </section>
+
+    <!-- 4. availLeft/availTop heuristic -->
+    <section class="card">
+        <div class="card-head">
+        <h2 class="card-title">4. Heuristic: <code>screen.availLeft</code> / <code>availTop</code></h2>
+        <span class="badge unknown" id="badge-avail">checking</span>
+        </div>
+        <p class="card-desc">
+        Non-standard but long-supported properties. If a monitor is positioned to the left of
+        or above the primary display, these go non-zero &mdash; a strong hint of a multi-monitor
+        layout with zero permissions involved.
+        </p>
+        <pre id="out-avail"></pre>
+    </section>
+
+    <!-- 5. drag heuristic -->
+    <section class="card">
+        <div class="card-head">
+        <h2 class="card-title">5. Heuristic: window position vs. screen bounds</h2>
+        <span class="badge unknown" id="badge-drag">watching</span>
+        </div>
+        <p class="card-desc">
+        Polls <code>window.screenX/screenY</code> against <code>screen.width/height</code>.
+        If the window is ever positioned (or dragged) outside the primary screen's bounds,
+        there must be another display out there.
+        </p>
+        <div class="hint">Try dragging this browser window onto your second monitor to trigger it.</div>
+        <pre id="out-drag"></pre>
+    </section>
+
+    <!-- 6. tamper / spoof detection -->
+    <section class="card">
+        <div class="card-head">
+        <h2 class="card-title">6. Is <code>isExtended</code> being blocked or spoofed?</h2>
+        <span class="badge unknown" id="badge-integrity">checking</span>
+        </div>
+        <p class="card-desc">
+        A user (or a privacy browser/extension) can override <code>screen.isExtended</code>
+        to always report <code>false</code> without removing it, which defeats simple
+        feature-detection. This checks whether the getter is still native code, and cross-checks
+        its answer against the independent heuristics above for consistency.
+        </p>
+        <pre id="out-integrity"></pre>
+    </section>
+
+    <!-- 7. hardware refresh-rate timing -->
+    <section class="card">
+        <div class="card-head">
+        <h2 class="card-title">7. Hardware signal: display refresh-rate (vsync) timing</h2>
+        <span class="badge unknown" id="badge-refresh">measuring</span>
+        </div>
+        <p class="card-desc">
+        Counts <code>requestAnimationFrame</code> callbacks over a fixed window to measure the
+        monitor's actual refresh rate from real vsync timing &mdash; not an OS-reported flag, so
+        it's much harder to fake convincingly. Re-measures periodically; a shift in Hz with no
+        display-settings change usually means the window crossed onto a different physical screen.
+        </p>
+        <div class="hint">Drag the window to a monitor with a different refresh rate to see it change.</div>
+        <pre id="out-refresh"></pre>
+    </section>
+
+    <!-- 8. VM / virtualization context signal -->
+    <section class="card">
+        <div class="card-head">
+        <h2 class="card-title">8. Context signal: is this even physical hardware?</h2>
+        <span class="badge unknown" id="badge-vm">checking</span>
+        </div>
+        <p class="card-desc">
+        Reads the WebGL renderer string, which often names the virtual GPU driver in a VM
+        (e.g. VMware SVGA3D, VirtualBox, Hyper-V, or a software renderer like llvmpipe/SwiftShader).
+        This doesn't detect monitors directly &mdash; it's a trust modifier for the other seven
+        cards. Inside a VM, "hardware" refresh-rate timing (method 7) is usually a synthetic,
+        hypervisor-emulated 60Hz rather than a real vsync signal, and virtual display counts are
+        whatever the hypervisor is configured to present.
+        </p>
+        <pre id="out-vm"></pre>
+    </section>
+
+    </main>
+
+    <details>
+    <summary>Raw diagnostic values</summary>
+    <pre id="out-raw"></pre>
+    </details>
+
+    <footer>
+    Built for local testing &mdash; every technique above runs client-side and reads only
+    already-exposed browser/screen properties.
+    </footer>
+
+    <script>
+    const $ = (id) => document.getElementById(id);
+
+    function setBadge(el, state, label) {
+        el.className = "badge " + state;
+        el.textContent = label;
+    }
+
+    // ---------- Hero ----------
+    function updateHero() {
+        const heroVerdict = $("hero-verdict");
+        const heroSub = $("hero-sub");
+        const heroCount = $("hero-count");
+
+        if ("isExtended" in screen) {
+        const extended = screen.isExtended;
+        heroVerdict.textContent = extended ? "Multiple displays detected" : "Single display";
+        heroVerdict.className = "hero-verdict " + (extended ? "yes" : "no");
+        heroSub.textContent = "Source: screen.isExtended (Window Management API, no permission needed).";
+        } else {
+        heroVerdict.textContent = "Unknown (unsupported browser)";
+        heroVerdict.className = "hero-verdict unknown";
+        heroSub.textContent = "screen.isExtended isn't supported here — see the heuristic cards below.";
+        }
+        // heroCount.innerHTML = "&mdash;<small>screens (if known)</small>";
+    }
+
+    // ---------- 1. screen.isExtended ----------
+    function updateIsExtended() {
+        const badge = $("badge-isExtended");
+        const out = $("out-isExtended");
+        if ("isExtended" in screen) {
+        const val = screen.isExtended;
+        setBadge(badge, val ? "yes" : "no", val ? "multiple" : "single");
+        out.textContent = JSON.stringify({ "screen.isExtended": val }, null, 2);
+        } else {
+        setBadge(badge, "unknown", "unsupported");
+        out.textContent = "screen.isExtended is not available in this browser.";
+        }
+    }
+
+    // ---------- 2. getScreenDetails() ----------
+    $("btn-details").addEventListener("click", async () => {
+        const badge = $("badge-details");
+        const out = $("out-details");
+        const btn = $("btn-details");
+        btn.disabled = true;
+
+        if (!("getScreenDetails" in window)) {
+        setBadge(badge, "unknown", "unsupported");
+        out.textContent = "getScreenDetails() is not available in this browser.";
+        btn.disabled = false;
+        return;
+        }
+
+        try {
+        const details = await window.getScreenDetails();
+        const screens = details.screens.map((s) => ({
+            label: s.label,
+            width: s.width,
+            height: s.height,
+            left: s.left,
+            top: s.top,
+            isPrimary: s.isPrimary,
+            isInternal: s.isInternal,
+            devicePixelRatio: s.devicePixelRatio
+        }));
+        const multi = screens.length > 1;
+        setBadge(badge, multi ? "yes" : "no", multi ? `${screens.length} screens` : "1 screen");
+        out.textContent = JSON.stringify(screens, null, 2);
+
+        details.addEventListener("screenschange", () => {
+            out.textContent = JSON.stringify(
+            details.screens.map((s) => ({ width: s.width, height: s.height, left: s.left, top: s.top })),
+            null, 2
+            );
+            setBadge(badge, details.screens.length > 1 ? "yes" : "no", `${details.screens.length} screens (live)`);
+        });
+        } catch (err) {
+        setBadge(badge, "warn", "denied/error");
+        out.textContent = "Permission denied or error: " + err.message;
+        } finally {
+        btn.disabled = false;
+        }
+    });
+
+    // ---------- 3. Permissions API ----------
+    async function updatePermissionState() {
+        const badge = $("badge-perm");
+        const out = $("out-perm");
+        if (!navigator.permissions || !navigator.permissions.query) {
+        setBadge(badge, "unknown", "unsupported");
+        out.textContent = "navigator.permissions is not available in this browser.";
+        return;
+        }
+        try {
+        const status = await navigator.permissions.query({ name: "window-management" });
+        setBadge(
+            badge,
+            status.state === "granted" ? "yes" : status.state === "denied" ? "no" : "warn",
+            status.state
+        );
+        out.textContent = JSON.stringify({ "window-management permission": status.state }, null, 2);
+        status.onchange = updatePermissionState;
+        } catch (err) {
+        setBadge(badge, "unknown", "unsupported");
+        out.textContent = "window-management is not a recognized permission name here: " + err.message;
+        }
+    }
+
+    // ---------- 4. availLeft/availTop heuristic ----------
+    function updateAvailHeuristic() {
+        const badge = $("badge-avail");
+        const out = $("out-avail");
+        const left = screen.availLeft ?? null;
+        const top = screen.availTop ?? null;
+        const supported = left !== null && top !== null;
+
+        if (!supported) {
+        setBadge(badge, "unknown", "unsupported");
+        out.textContent = "availLeft/availTop are not available in this browser.";
+        return;
+        }
+
+        const offset = left !== 0 || top !== 0;
+        setBadge(badge, offset ? "yes" : "warn", offset ? "offset found" : "inconclusive");
+        out.textContent = JSON.stringify(
+        { availLeft: left, availTop: top, note: offset ? "Non-zero offset suggests a display to the left/above." : "Zero offset — doesn't rule out a monitor to the right/below." },
+        null, 2
+        );
+    }
+
+    // ---------- 5. Drag / position heuristic ----------
+    let dragMultiDetected = false;
+    function updateDragHeuristic() {
+        const badge = $("badge-drag");
+        const out = $("out-drag");
+
+        const x = window.screenX;
+        const y = window.screenY;
+        const w = window.outerWidth;
+        const h = window.outerHeight;
+        const sw = screen.width;
+        const sh = screen.height;
+
+        const outOfBounds = x < 0 || y < 0 || (x + w) > sw || (y + h) > sh;
+        if (outOfBounds) dragMultiDetected = true;
+
+        setBadge(
+        badge,
+        dragMultiDetected ? "yes" : "warn",
+        dragMultiDetected ? "multiple" : "watching"
+        );
+        out.textContent = JSON.stringify(
+        {
+            screenX: x, screenY: y, outerWidth: w, outerHeight: h,
+            primaryScreen: { width: sw, height: sh },
+            outOfPrimaryBounds: outOfBounds,
+            everDetected: dragMultiDetected
+        },
+        null, 2
+        );
+    }
+
+    // ---------- 6. Tamper / spoof detection for isExtended ----------
+    function updateIntegrityCheck() {
+        const badge = $("badge-integrity");
+        const out = $("out-integrity");
+
+        if (!("isExtended" in screen)) {
+        setBadge(badge, "unknown", "n/a");
+        out.textContent = "screen.isExtended doesn't exist here at all — that's the honest " +
+            "signature of an enterprise policy or unsupported browser, not spoofing.";
+        return;
+        }
+
+        // A native, un-tampered getter stringifies to "[native code]". An
+        // extension or script that overrides the property to fake a value
+        // will show its actual function source instead.
+        const descriptor =
+        Object.getOwnPropertyDescriptor(Screen.prototype, "isExtended") ||
+        Object.getOwnPropertyDescriptor(screen, "isExtended");
+        const getterSrc = descriptor && descriptor.get ? descriptor.get.toString() : null;
+        const looksNative = !!getterSrc && getterSrc.includes("[native code]");
+
+        // Cross-check isExtended's answer against the independent heuristics
+        // gathered elsewhere on this page.
+        const avalOffset = (screen.availLeft ?? 0) !== 0 || (screen.availTop ?? 0) !== 0;
+        const otherSignals = dragMultiDetected || avalOffset;
+        const inconsistent = screen.isExtended === false && otherSignals;
+
+        let state, label, note;
+        if (!looksNative) {
+        state = "warn";
+        label = "possibly overridden";
+        note = "The isExtended getter is not native code — a browser extension or privacy " +
+            "tool may be intercepting it. Its reported value cannot be trusted on its own.";
+        } else if (inconsistent) {
+        state = "warn";
+        label = "inconsistent";
+        note = "isExtended reports a single display, but another heuristic on this page " +
+            "(drag bounds or availLeft/Top offset) suggests otherwise. Worth treating isExtended " +
+            "as unreliable until confirmed with method 2.";
+        } else {
+        state = "yes";
+        label = "looks trustworthy";
+        note = "Getter is native code and agrees with the other independent signals gathered so far.";
+        }
+
+        setBadge(badge, state, label);
+        out.textContent = JSON.stringify(
+        {
+            getterIsNativeCode: looksNative,
+            crossCheck: { dragHeuristicDetectedMulti: dragMultiDetected, availOffsetDetected: avalOffset },
+            verdict: note
+        },
+        null, 2
+        );
+    }
+
+    // ---------- 7. Hardware refresh-rate (vsync) timing ----------
+    let lastHz = null;
+    let measuringRefresh = false;
+
+    function measureRefreshRate(durationMs = 500) {
+        return new Promise((resolve) => {
+        let frames = 0;
+        let start = null;
+        function step(ts) {
+            if (start === null) start = ts;
+            frames++;
+            if (ts - start < durationMs) {
+            requestAnimationFrame(step);
+            } else {
+            resolve((frames / (ts - start)) * 1000);
+            }
+        }
+        requestAnimationFrame(step);
+        });
+    }
+
+    async function updateRefreshHeuristic() {
+        if (measuringRefresh) return;
+        measuringRefresh = true;
+        const badge = $("badge-refresh");
+        const out = $("out-refresh");
+        setBadge(badge, "unknown", "measuring");
+
+        const hz = await measureRefreshRate();
+        const changed = lastHz !== null && Math.abs(hz - lastHz) > 5;
+
+        setBadge(badge, changed ? "yes" : "unknown", changed ? "rate changed" : `~${Math.round(hz)} Hz`);
+        out.textContent = JSON.stringify(
+        {
+            measuredHz: Math.round(hz * 10) / 10,
+            previousHz: lastHz !== null ? Math.round(lastHz * 10) / 10 : null,
+            changedSinceLastCheck: changed,
+            note: changed
+            ? "Refresh rate shifted — likely moved to a physical display with a different Hz."
+            : "Baseline captured. Re-measures periodically and after resize.",
+            caveat: "Noisy: OS power throttling, background-tab throttling, and CPU load can also cause shifts."
+        },
+        null, 2
+        );
+
+        lastHz = hz;
+        measuringRefresh = false;
+    }
+
+    // ---------- 8. VM / virtualization context signal ----------
+    const VM_RENDERER_HINTS = [
+        "vmware", "virtualbox", "parallels", "llvmpipe", "swiftshader",
+        "basic render", "basic display", "microsoft basic", "hyper-v",
+        "virtual", "qemu", "bochs", "remote desktop", "rdp"
+    ];
+
+    function updateVmSignal() {
+        const badge = $("badge-vm");
+        const out = $("out-vm");
+
+        let info;
+        try {
+        const canvas = document.createElement("canvas");
+        const gl = canvas.getContext("webgl") || canvas.getContext("experimental-webgl");
+        if (!gl) throw new Error("WebGL not available");
+        const dbg = gl.getExtension("WEBGL_debug_renderer_info");
+        info = dbg
+            ? { renderer: gl.getParameter(dbg.UNMASKED_RENDERER_WEBGL), vendor: gl.getParameter(dbg.UNMASKED_VENDOR_WEBGL), unmasked: true }
+            : { renderer: gl.getParameter(gl.RENDERER), vendor: gl.getParameter(gl.VENDOR), unmasked: false };
+        } catch (err) {
+        setBadge(badge, "unknown", "unavailable");
+        out.textContent = "Could not read WebGL renderer info: " + err.message;
+        return;
+        }
+
+        const haystack = `${info.renderer} ${info.vendor}`.toLowerCase();
+        const matchedHint = VM_RENDERER_HINTS.find((hint) => haystack.includes(hint));
+        const likelyVirtual = !!matchedHint;
+
+        setBadge(badge, likelyVirtual ? "warn" : "yes", likelyVirtual ? "likely virtualized" : "looks physical");
+        out.textContent = JSON.stringify(
+        {
+            renderer: info.renderer,
+            vendor: info.vendor,
+            unmasked: info.unmasked,
+            matchedHint: matchedHint || null,
+            note: likelyVirtual
+            ? "Renderer string suggests a virtual/software GPU — treat methods 1-7 as reporting on the guest OS's virtual display config, not physical monitors, and don't trust method 7's Hz as real vsync."
+            : "No VM/software-render hint found — not proof of physical hardware (spoofable, and some real GPUs use generic names), just no obvious signal against it."
+        },
+        null, 2
+        );
+    }
+
+    // ---------- Raw diagnostics ----------
+    function updateRaw() {
+        $("out-raw").textContent = JSON.stringify({
+        screen: {
+            width: screen.width, height: screen.height,
+            availWidth: screen.availWidth, availHeight: screen.availHeight,
+            availLeft: screen.availLeft, availTop: screen.availTop,
+            isExtended: screen.isExtended ?? "unsupported",
+            devicePixelRatio: window.devicePixelRatio
+        },
+        window: {
+            screenX: window.screenX, screenY: window.screenY,
+            outerWidth: window.outerWidth, outerHeight: window.outerHeight,
+            innerWidth: window.innerWidth, innerHeight: window.innerHeight
+        },
+        apis: {
+            "screen.isExtended": "isExtended" in screen,
+            "window.getScreenDetails": "getScreenDetails" in window,
+            "navigator.permissions": !!(navigator.permissions && navigator.permissions.query)
+        }
+        }, null, 2);
+    }
+
+    function updateAll() {
+        updateHero();
+        updateIsExtended();
+        updateAvailHeuristic();
+        updateDragHeuristic();
+        updateIntegrityCheck();
+        updateRaw();
+    }
+
+    updateAll();
+    updatePermissionState();
+    updateRefreshHeuristic();
+    updateVmSignal();
+
+    window.addEventListener("resize", () => {
+        updateAll();
+        updateRefreshHeuristic();
+    });
+    // No native "window move" event exists, so poll for position changes
+    // (e.g. dragging across monitors) at a light interval.
+    setInterval(updateDragHeuristic, 500);
+    // Refresh-rate measurement is heavier, so it runs on its own slower cadence.
+    setInterval(updateRefreshHeuristic, 4000);
+
+    // React live if the OS display topology changes while the page is open
+    // (monitor plugged/unplugged) where supported.
+    if ("isExtended" in screen && screen.addEventListener) {
+        screen.addEventListener("change", updateAll);
+    }
+    </script>
+
+    </body>
+</html>
