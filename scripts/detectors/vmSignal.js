@@ -1,6 +1,9 @@
 // ---------- 8. VM / virtualization context signal ----------
-const VM_RENDERER_HINTS = [
-    "vmware", "virtualbox", "parallels", "llvmpipe", "swiftshader",
+// Shared with method 2's label check (screenDetails.js) — both are
+// substring-matching a string an attacker could set to anything, so they
+// use the same hint vocabulary rather than maintaining two lists.
+export const VM_HINTS = [
+    "vmware", "virtualbox", "vbox", "parallels", "llvmpipe", "swiftshader",
     "basic render", "basic display", "microsoft basic", "hyper-v",
     "virtual", "qemu", "bochs", "remote desktop", "rdp"
 ];
@@ -25,7 +28,7 @@ export function detectVmSignal() {
     }
 
     const haystack = `${info.renderer} ${info.vendor}`.toLowerCase();
-    const matchedHint = VM_RENDERER_HINTS.find((hint) => haystack.includes(hint));
+    const matchedHint = VM_HINTS.find((hint) => haystack.includes(hint));
     const likelyVirtual = !!matchedHint;
 
     return {

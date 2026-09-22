@@ -17,7 +17,14 @@ almost certainly what most sites use, and is likely what tipped you off.
 
 The full Window Management API. Returns an array of every connected screen
 with size, position, and primary/internal flags. Requires a user gesture and
-an explicit permission grant, so it can't run silently on page load.
+an explicit permission grant, so it can't run silently on page load. Each
+screen's `label` (a free-form string the OS hands the browser — this VM
+reports `"VBOX monitor"`) is also checked against the same virtualization
+hint list method 8 uses for the WebGL renderer string. It's a weak signal on
+its own (spoofable the same way `isExtended` is — confirmed via the same
+CDP-injection technique used against method 6 — and legitimate hardware
+sometimes reports generic labels too), but it's a check most stealth tooling
+doesn't think to fake specifically.
 
 ## 3. Permissions API state (no prompt)
 
@@ -43,6 +50,18 @@ Users and privacy tools (e.g. Brave, hardened browsers, anti-fingerprinting
 extensions) can override `isExtended` to always report `false`. This method
 checks whether the property's getter is still native code, and cross-checks
 its answer against methods 4 and 5 for consistency.
+
+The native-code check (`scripts/detectors/nativeCode.js`) uses a trusted
+`Function.prototype.toString` taken from a hidden, same-origin `about:blank`
+iframe (`scripts/detectors/pristine.js`). That iframe has its own fresh set
+of built-ins, which a script that patched *this* page hasn't touched. The
+check calls it via `.call()` rather than asking the getter to stringify
+itself, so a lying per-function `toString` can't intervene. A page-wide
+`toString` patch can't either. The getter's source must also match the
+pristine realm's copy exactly. That catches a `Proxy` wrapped around the
+native getter, which stringifies as an anonymous `function () { [native
+code] }`. The check also reports whether this page's `toString` itself has
+been replaced (Brave does this legitimately).
 
 ## 7. Hardware signal: display refresh-rate (vsync) timing
 
@@ -70,9 +89,14 @@ than a real vsync signal.
   in screen` is `false`) is an honest signal — usually an unsupported browser
   or an enterprise policy. A *present but overridden* API is not detectable
   the same way.
-- **The native-code check can be defeated.** Sophisticated spoofers (Brave's
-  fingerprint randomization included) also patch `Function.prototype.toString`
-  so an overridden getter still claims to be `[native code]`.
+- **The native-code check can still be defeated at a deeper level.** It
+  now resists per-function `toString` lies, page-wide `toString` patches and
+  `Proxy` wrappers by checking against a pristine iframe realm. A spoofer
+  that also reaches into new `about:blank` frames can still defeat it, for
+  example an extension with `match_about_blank`/`all_frames`, or a page
+  script that hooks `createElement`, `appendChild` or `contentWindow` before
+  ours runs. The webcam page checks those hooks too. Beyond that, verifying
+  the verifier never fully terminates.
 - **Cross-signal checks only catch inconsistency, not truth.** If every
   signal is spoofed in agreement, nothing on this page can tell.
 - **Chromium-only for methods 2 and 3.** `getScreenDetails()` and the
@@ -99,3 +123,206 @@ than a real vsync signal.
   into what the guest sees as a single screen, or the reverse. Method 8's
   renderer check is a hint, not proof: it can miss unusual real GPUs and
   can't detect virtualization that spoofs the renderer string too.
+
+---
+
+# Phony Webcam Detection Tests
+
+`webcam.html` applies the same approach to cameras: it tries to tell a real
+physical webcam from a phony one. Phony here means a virtual camera driver
+(OBS Virtual Camera, ManyCam, XSplit VCam, Snap Camera, DroidCam, Chrome's
+`--use-fake-device-for-media-stream`) or a script that replaces
+`getUserMedia` with a canvas or video stream. Methods 1–3 and 12 run
+without permission. Methods 4–11 need the live feed and wait for **Start
+camera**. Frames are analyzed in memory and never leave the page.
+
+**Tamper-resistant measurement.** The page opens the camera and reads
+pixels through pristine copies of `getUserMedia`, `enumerateDevices`,
+`getSettings`, `drawImage`, `getImageData` and `requestVideoFrameCallback`,
+taken from a hidden iframe (see method 6 of the monitor page). A script
+that patched this page's copies is flagged by method 3, but it can't steer
+the measurements. For example, a `getImageData` override that adds fake
+noise to a still image is flagged, and method 8 still sees the frozen frames
+underneath.
+
+**Hero verdict**, in order of precedence:
+1. A tampered camera API (method 3) wins outright.
+2. A loop or freeze caught mid-session (method 11) overrides earlier passes.
+3. The flash challenge (method 9) decides live vs. phony. If it passes but
+   other cards raise strong flags, the verdict is "Live feed, but flagged",
+   e.g. a real camera relayed through OBS.
+4. Otherwise the page tallies strong and weak flags from methods 3–8 and
+   10–11.
+
+## 1. Permissions API state (`camera`)
+
+`navigator.permissions.query({ name: "camera" })` reveals whether camera
+access is granted, denied or unset, without a prompt. Shares
+`checkPermissionState()` with the monitor page's method 3.
+
+## 2. Device inventory (`enumerateDevices()`)
+
+Counts video inputs. More than one camera is a weak hint, because a virtual
+camera usually sits next to the real one. Before permission, browsers may
+cap the list at one device per kind and hide labels. Updates live on
+`devicechange`.
+
+## 3. Camera API integrity
+
+Compares 15 APIs against their pristine-realm copies, using the same
+`isNativeFunction()` helper as monitor method 6:
+- the camera APIs (`getUserMedia`, `enumerateDevices`, the `mediaDevices`
+  getter, `getSettings`, `getCapabilities`, `applyConstraints`, the track
+  `label` getter);
+- the APIs a detector reads pixels and time through (`drawImage`,
+  `getImageData`, `requestVideoFrameCallback`, `performance.now`,
+  `permissions.query`);
+- the hooks that could reach into the pristine iframe as it's created
+  (`createElement`, `appendChild`, `contentWindow`).
+
+It also flags `getUserMedia`/`enumerateDevices` shadowed on the
+`navigator.mediaDevices` instance, and a patched `Function.prototype.toString`
+(weak, since Brave does this). Once the camera starts, it checks that the
+track comes from a real device: canvas tracks (`requestFrame`/`canvas`) and
+deviceIds missing from `enumerateDevices()` are flagged. This catches
+script injection, not driver-level virtual cameras.
+
+## 4. Camera label hints + USB ID
+
+Substring-matches the active camera's label against default virtual-camera
+names (`VIRTUAL_CAM_HINTS`). A virtual camera that is installed but not in
+use is reported but not counted as a flag.
+
+On Windows and Linux, Chromium appends the USB vendor:product ID to USB
+camera labels, e.g. `Integrated Webcam (0bda:5583)`. Virtual cameras never
+have one. The check calibrates itself against the browser's behavior: a
+missing ID is a weak flag only when another camera on the same system *does*
+have one. Built-in MIPI cameras (e.g. Surface) have no USB ID either, which
+is why it stays weak.
+
+## 5. Hardware shape: `getCapabilities()` + `groupId`
+
+Real UVC webcams expose sensor controls (exposure, white balance,
+brightness, focus, zoom…). A webcam with a built-in mic shares a `groupId`
+with its audio input. Virtual cameras usually expose neither. If the browser
+exposes no such controls at all (mostly outside Chromium), the card reports
+"browser limited" rather than a flag.
+
+## 6. Control response
+
+Method 5 reads what the camera *claims*. This drives the first available
+of `brightness`, `exposureCompensation` or `exposureTime` to its minimum and
+maximum with `applyConstraints`. It measures the picture's mean brightness
+at each, then restores the original setting. A real sensor darkens and
+brightens by at least 10 levels. A control that is accepted (the setting
+reads back changed) but doesn't change the picture is a strong flag: the
+capability is advertised, not real. A silently ignored change or an error
+is weak. It runs after the frame sample (methods 7–8), since it
+deliberately changes the picture.
+
+## 7. Frame timing
+
+Uses `requestVideoFrameCallback` to read each frame's `captureTime`, falling
+back to `mediaTime`, over 5 s. A near-zero coefficient of variation in frame
+intervals suggests a software render loop. This is only ever a weak flag.
+
+## 8. Pixel noise / frozen / looped feed
+
+Compares the same sampled frames (160×120 grayscale):
+- **Frozen.** A real sensor never produces two bit-identical frames; a
+  still image does. Frequent exact repeats (weak) point to a source
+  re-sending frames.
+- **Looped.** Each frame is reduced to a 16×12 block-average fingerprint.
+  A replay is a pair of non-adjacent frames closer than 0.3× the sensor-noise
+  distance, with a frame in between that moved at least one noise-distance
+  away. Two separate exposures can't get that close, because their noise is
+  independent. A replayed frame can, even after slight rescaling.
+- **Flat noise.** Per-pixel temporal noise is grouped by brightness, with
+  moving pixels dropped. After the camera's gamma curve, real sensor noise
+  is strongly brightness-dependent: shadows are noisiest, about 2.5× the
+  highlights in simulation. Noise added uniformly to a clean image is flat
+  (max/min ratio < 1.3), which is a weak flag.
+
+Near-black frames (a covered lens) are not judged.
+
+## 9. Challenge: screen-flash reflection
+
+Flashes the screen through a random red/green/blue sequence (500 ms per
+color, under the WCAG three-flashes-per-second limit). It then correlates
+each color channel's share of the frame center with the sequence:
+- **Significance.** The score is compared with 2,000 reshuffles of the same
+  sequence. It passes only if p < 0.005 and the correlation is at least
+  0.5. In simulation, fake feeds pass 0.6% of the time.
+- **Capture delay.** The step windows are shifted by 0–400 ms and the best
+  fit is kept. The shuffles take their best shift too, so the p-value stays
+  honest. A delay outside 40–350 ms is a weak flag (instant = synthetic,
+  late = relayed).
+- **Where the tint lands.** A real face near the screen tints more than
+  the background. A whole-frame color filter tints both equally (ratio
+  < 1.1), which is a weak flag.
+
+A recorded or synthetic feed can't follow the sequence, because it's chosen
+at runtime. An opt-in checkbox re-runs the test at random 1–3 minute
+intervals.
+
+## 10. Cross-check: consistency
+
+Independent readings of the same camera should agree:
+- reported vs. actual frame size;
+- reported vs. measured frame rate (only *more* frames than reported is
+  suspicious, since real cameras slow down in dim light);
+- the track's label and `groupId` vs. the device list;
+- what this page's `getSettings` returns vs. the pristine copy.
+
+One mismatch is weak, and two or more are strong.
+
+## 11. Session monitor
+
+The other cards check once. This keeps watching for the rest of the session:
+- **Every frame is hashed** (a 16×12 thumbnail, ~53-bit hash). A frame that
+  repeats *exactly* after the scene has moved on at least twice is a loop.
+  This catches loops up to 10 minutes long. A real still scene can't
+  trigger it, because nothing moved in between.
+- **Identical frames for 3 s** are a freeze.
+- **Track changes are logged:** mute/unmute/ended events, stalls (no frame
+  for 2 s while the tab is visible), and changes of device, label,
+  resolution or frame rate (a source switch).
+
+Loops and freezes are strong flags; the rest are weak.
+
+## 12. Context: VM signal
+
+The monitor page's method 8, reused unchanged. Inside a VM or remote session
+the camera is redirected or emulated, so treat the sensor cards with
+caution.
+
+## Webcam limitations
+
+- **A virtual camera with a real camera behind it passes the sensor tests.**
+  If OBS relays a live webcam, the frames really do come from a sensor.
+  Timing, noise, control response (if OBS passes controls through) and even
+  the flash test can pass. The label and USB-ID card (4) and hardware shape
+  (5) are what catch it, and the hero reports "Live feed, but flagged".
+- **Labels can be renamed.** Some tools let you rename the driver, and
+  determined users can edit it in the registry.
+- **`getCapabilities()`/`applyConstraints()` controls are Chromium-centric**,
+  and some cheap real webcams expose few controls too.
+- **USB IDs are Chromium-on-Windows/Linux only.** Other browsers and macOS
+  don't add them, so method 4 reports "can't judge" there.
+- **The noise statistics assume a lightly processed sensor.** Heavy in-camera
+  temporal denoising can flatten the noise profile (a false "flat noise",
+  weak), and noise added *before* a loop is recorded survives replay. Real
+  footage looped through a virtual camera is caught by exact repeats, not by
+  its noise.
+- **Timing is noisy.** Browser scheduling adds jitter even to
+  software-paced sources, so method 7 misses a lot.
+- **The flash test needs cooperation.** Bright rooms, a distant face, or
+  aggressive auto white balance weaken the reflection. It also flashes the
+  screen, so it must stay opt-in.
+- **The pristine realm can be reached.** An extension injecting into
+  `about:blank` frames, or a script that hooks iframe creation, can patch
+  the pristine copies too. See the monitor page's limitations.
+- **Tuned on synthetic data.** Thresholds (0.3× noise distance, flat ratio
+  1.3, p < 0.005, 40–350 ms delay, 10-level control swing) come from
+  simulations. They still need checking against real webcams and real
+  virtual cameras.

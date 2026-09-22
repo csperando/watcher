@@ -1,9 +1,10 @@
-import { $, setBadge } from "./dom.js";
+import { $, setBadge, renderCard } from "./dom.js";
 import {
     isScreenDetailsSupported,
     requestScreenDetails,
     shapeScreens,
-    shapeScreensLive
+    shapeScreensLive,
+    detectLabelHints
 } from "../detectors/screenDetails.js";
 import { checkPermissionState } from "../detectors/permissions.js";
 import { detectAvailHeuristic } from "../detectors/availHeuristic.js";
@@ -11,12 +12,6 @@ import { detectDragHeuristic } from "../detectors/dragHeuristic.js";
 import { detectIntegrity } from "../detectors/integrityCheck.js";
 import { detectRefreshRate, isMeasuringRefresh } from "../detectors/refreshRate.js";
 import { detectVmSignal } from "../detectors/vmSignal.js";
-
-function renderCard(badgeId, outId, result) {
-    setBadge($(badgeId), result.state, result.label);
-    $(outId).textContent = result.text;
-    return result;
-}
 
 // ---------- 1. screen.isExtended ----------
 export function renderIsExtendedCard(result) {
@@ -42,12 +37,23 @@ export function initScreenDetailsCard() {
             const details = await requestScreenDetails();
             const screens = shapeScreens(details.screens);
             const multi = screens.length > 1;
-            setBadge(badge, multi ? "yes" : "no", multi ? `${screens.length} screens` : "1 screen");
-            out.textContent = JSON.stringify(screens, null, 2);
+            const hints = detectLabelHints(screens);
+            setBadge(
+                badge,
+                hints.anyHint ? "warn" : (multi ? "yes" : "no"),
+                hints.anyHint ? "vm label found" : (multi ? `${screens.length} screens` : "1 screen")
+            );
+            out.textContent = JSON.stringify({ screens, vmLabelHint: hints.anyHint ? hints.matches : null }, null, 2);
 
             details.addEventListener("screenschange", () => {
-                out.textContent = JSON.stringify(shapeScreensLive(details.screens), null, 2);
-                setBadge(badge, details.screens.length > 1 ? "yes" : "no", `${details.screens.length} screens (live)`);
+                const liveScreens = shapeScreensLive(details.screens);
+                const liveHints = detectLabelHints(liveScreens);
+                out.textContent = JSON.stringify({ screens: liveScreens, vmLabelHint: liveHints.anyHint ? liveHints.matches : null }, null, 2);
+                setBadge(
+                    badge,
+                    liveHints.anyHint ? "warn" : (details.screens.length > 1 ? "yes" : "no"),
+                    liveHints.anyHint ? "vm label found" : `${details.screens.length} screens (live)`
+                );
             });
         } catch (err) {
             setBadge(badge, "warn", "denied/error");

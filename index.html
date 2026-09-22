@@ -56,7 +56,9 @@
         </div>
         <p class="card-desc">
         The full API. Returns every connected screen with position, size and primary/internal
-        flags &mdash; but <em>does</em> require a user gesture and a permission grant.
+        flags &mdash; but <em>does</em> require a user gesture and a permission grant. Each
+        screen's <code>label</code> is also checked against the same virtualization hints as
+        method 8 (e.g. this VM reports "VBOX monitor").
         </p>
         <button id="btn-details">Request screen details&hellip;</button>
         <pre id="out-details">(not requested yet)</pre>

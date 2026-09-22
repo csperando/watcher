@@ -1,0 +1,247 @@
+<!DOCTYPE html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <title>Phony Webcam Detection Playground</title>
+        <link rel="stylesheet" href="css/tokens.css">
+        <link rel="stylesheet" href="css/app.css">
+    </head>
+    <body>
+
+    <header>
+    <h1>Phony Webcam Detection Playground</h1>
+    <p>
+        A site can tell whether a real camera is filming you or a virtual one (OBS, ManyCam, a looped
+        video, a still image) is feeding it. Some checks here run without permission. The rest analyze
+        the live feed itself: timing, pixel noise, and whether it reacts to light from this screen.
+    </p>
+    </header>
+
+    <div class="hero">
+        <div>
+            <div class="hero-label">Overall verdict</div>
+            <div class="hero-verdict unknown" id="hero-verdict">Checking&hellip;</div>
+            <div class="hero-sub" id="hero-sub">Combines every card below; the flash test outranks the rest.</div>
+        </div>
+        <div class="hero-count" id="hero-count"></div>
+    </div>
+
+    <main>
+
+    <!-- camera control -->
+    <section class="card wide">
+        <div class="card-head">
+        <h2 class="card-title">Camera</h2>
+        <span class="badge unknown" id="badge-camera">off</span>
+        </div>
+        <p class="card-desc">
+        Cards 1&ndash;3 and 12 run without any permission. Cards 4&ndash;11 need the live feed, so
+        they wait for this button. Frames are analyzed in this tab and never leave the page.
+        </p>
+        <div class="camera-row">
+            <video id="cam-video" class="cam-preview" muted playsinline></video>
+            <div class="camera-controls">
+                <button id="btn-camera">Start camera&hellip;</button>
+                <pre id="out-camera">(not started)</pre>
+            </div>
+        </div>
+    </section>
+
+    <!-- 1. Permissions API state -->
+    <section class="card">
+        <div class="card-head">
+        <h2 class="card-title">1. Permissions API state (no prompt)</h2>
+        <span class="badge unknown" id="badge-perm">checking</span>
+        </div>
+        <p class="card-desc">
+        <code>navigator.permissions.query({name: "camera"})</code> reveals whether camera access is
+        already granted, denied or unset &mdash; without showing a dialog.
+        </p>
+        <pre id="out-perm"></pre>
+    </section>
+
+    <!-- 2. enumerateDevices() inventory -->
+    <section class="card">
+        <div class="card-head">
+        <h2 class="card-title">2. Device inventory &mdash; <code>enumerateDevices()</code></h2>
+        <span class="badge unknown" id="badge-inventory">checking</span>
+        </div>
+        <p class="card-desc">
+        Lists the video inputs. More than one camera is a weak hint: a laptop with a virtual camera
+        installed usually shows its real camera plus the virtual one. Labels stay hidden until camera
+        access is granted. Updates live as devices come and go.
+        </p>
+        <pre id="out-inventory"></pre>
+    </section>
+
+    <!-- 3. API integrity -->
+    <section class="card">
+        <div class="card-head">
+        <h2 class="card-title">3. Is <code>getUserMedia</code> being faked?</h2>
+        <span class="badge unknown" id="badge-api">checking</span>
+        </div>
+        <p class="card-desc">
+        A script or extension can replace <code>getUserMedia</code> to return a canvas or video
+        stream instead of a camera, or fake the canvas APIs a detector reads pixels through. This
+        compares 15 APIs against pristine copies from a hidden iframe (which a page-wide
+        <code>toString</code> patch can't fake) and, once the camera starts, checks that the track
+        really comes from a listed capture device.
+        </p>
+        <pre id="out-api"></pre>
+    </section>
+
+    <!-- 4. label hints -->
+    <section class="card">
+        <div class="card-head">
+        <h2 class="card-title">4. Camera name: virtual camera names + USB ID</h2>
+        <span class="badge unknown" id="badge-labels">not started</span>
+        </div>
+        <p class="card-desc">
+        Matches the active camera's label against default names used by virtual camera software
+        (OBS Virtual Camera, ManyCam, XSplit VCam, Snap Camera, DroidCam, Chrome's fake device&hellip;).
+        Easy to beat by renaming the driver, but most people don't. Also checks for the USB
+        vendor:product ID Chromium appends to real USB cameras' names, which virtual cameras never have.
+        </p>
+        <pre id="out-labels">(needs camera)</pre>
+    </section>
+
+    <!-- 5. hardware shape -->
+    <section class="card">
+        <div class="card-head">
+        <h2 class="card-title">5. Hardware shape: <code>getCapabilities()</code> + <code>groupId</code></h2>
+        <span class="badge unknown" id="badge-hardware">not started</span>
+        </div>
+        <p class="card-desc">
+        Real webcams expose physical controls (exposure, focus, white balance, zoom&hellip;) and a
+        webcam with a built-in mic shares a <code>groupId</code> with it. A virtual camera is just a
+        frame source and usually exposes neither.
+        </p>
+        <pre id="out-hardware">(needs camera)</pre>
+    </section>
+
+    <!-- 6. control response -->
+    <section class="card">
+        <div class="card-head">
+        <h2 class="card-title">6. Hardware signal: does the control actually do anything?</h2>
+        <span class="badge unknown" id="badge-control">not started</span>
+        </div>
+        <p class="card-desc">
+        Card 5 reads what the camera <em>claims</em>. This drives a brightness or exposure control to its
+        minimum and maximum, then restores it, and checks that the picture really darkens and brightens.
+        A virtual camera can advertise a control, but nothing happens to its frames.
+        </p>
+        <pre id="out-control">(needs camera)</pre>
+    </section>
+
+    <!-- 7. frame timing -->
+    <section class="card">
+        <div class="card-head">
+        <h2 class="card-title">7. Sensor signal: frame timing</h2>
+        <span class="badge unknown" id="badge-timing">not started</span>
+        </div>
+        <p class="card-desc">
+        Reads each frame's timestamp via <code>requestVideoFrameCallback</code>. A physical sensor's
+        clock jitters and slows in dim light. A software-paced virtual camera ticks almost perfectly
+        evenly. Browser scheduling adds jitter to everything, so this is only ever a weak signal.
+        </p>
+        <pre id="out-timing">(needs camera)</pre>
+    </section>
+
+    <!-- 8. pixel noise -->
+    <section class="card">
+        <div class="card-head">
+        <h2 class="card-title">8. Sensor signal: pixel noise, frozen or looped feed</h2>
+        <span class="badge unknown" id="badge-noise">not started</span>
+        </div>
+        <p class="card-desc">
+        Real sensors add fresh noise to every frame, and that noise varies with brightness (shadows are
+        noisiest). A still image repeats exactly, a looped video returns to an earlier frame far more
+        exactly than noise allows, and noise added to a clean image is the same at every brightness.
+        </p>
+        <pre id="out-noise">(needs camera)</pre>
+    </section>
+
+    <!-- 9. flash challenge -->
+    <section class="card">
+        <div class="card-head">
+        <h2 class="card-title">9. Challenge: does the feed react to this screen?</h2>
+        <span class="badge unknown" id="badge-flash">not run</span>
+        </div>
+        <p class="card-desc">
+        Flashes the screen through a random red/green/blue sequence and checks whether the color of
+        your face in the feed follows it, how likely that is by chance (p-value), how long the camera
+        took to react, and whether your face tinted more than the background. A pre-recorded or
+        synthetic feed can't know the sequence in advance. This is the strongest check on the page.
+        </p>
+        <div class="hint">
+            Face the camera, sit close to the screen, ideally in a dim room. The screen changes color
+            twice a second for 5 seconds &mdash; skip this if you're sensitive to flashing light.
+        </div>
+        <button id="btn-flash" disabled>Run flash test</button>
+        <label class="check">
+            <input type="checkbox" id="chk-rechallenge" disabled>
+            Re-run at random times (every 1&ndash;3 minutes)
+        </label>
+        <pre id="out-flash">(needs camera)</pre>
+    </section>
+
+    <!-- 10. consistency -->
+    <section class="card">
+        <div class="card-head">
+        <h2 class="card-title">10. Cross-check: do the readings agree?</h2>
+        <span class="badge unknown" id="badge-consistency">not started</span>
+        </div>
+        <p class="card-desc">
+        Independent readings of the same camera should match: reported vs. actual resolution, reported
+        vs. measured frame rate, the track's name vs. the device list, and what this page's
+        <code>getSettings</code> says vs. a pristine copy. Faked streams tend to get one wrong.
+        </p>
+        <pre id="out-consistency">(needs camera)</pre>
+    </section>
+
+    <!-- 11. session monitor -->
+    <section class="card">
+        <div class="card-head">
+        <h2 class="card-title">11. Session monitor: does it stay real?</h2>
+        <span class="badge unknown" id="badge-monitor">not started</span>
+        </div>
+        <p class="card-desc">
+        The other cards check once. A virtual camera can pass them live and then switch to a recording,
+        so this keeps watching every frame for loops (up to 10 minutes long) and freezes, and logs
+        mutes, stalls and changes of device or format for the rest of the session.
+        </p>
+        <pre id="out-monitor">(needs camera)</pre>
+    </section>
+
+    <!-- 12. VM / virtualization context signal -->
+    <section class="card">
+        <div class="card-head">
+        <h2 class="card-title">12. Context signal: is this even physical hardware?</h2>
+        <span class="badge unknown" id="badge-vm">checking</span>
+        </div>
+        <p class="card-desc">
+        The same WebGL renderer check as the monitor page. Inside a VM or remote-desktop session the
+        camera is redirected or emulated, so treat the sensor cards above with extra caution.
+        </p>
+        <pre id="out-vm"></pre>
+    </section>
+
+    </main>
+
+    <details>
+    <summary>Raw diagnostic values</summary>
+    <pre id="out-raw"></pre>
+    </details>
+
+    <footer>
+    Built for local testing &mdash; every technique above runs client-side; camera frames are
+    analyzed in memory and never uploaded.
+    </footer>
+
+    <div id="flash-overlay" hidden>Keep your face in view&hellip;</div>
+
+    <script type="module" src="scripts/webcam-main.js"></script>
+
+    </body>
+</html>

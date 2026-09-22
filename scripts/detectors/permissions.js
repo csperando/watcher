@@ -1,5 +1,6 @@
-// ---------- 3. Permissions API ----------
-export async function checkPermissionState() {
+// ---------- Permissions API (no prompt) ----------
+// Shared by method 3 ("window-management") and the webcam page ("camera").
+export async function checkPermissionState(name = "window-management") {
     if (!navigator.permissions || !navigator.permissions.query) {
         return {
             status: null,
@@ -12,13 +13,13 @@ export async function checkPermissionState() {
     }
 
     try {
-        const status = await navigator.permissions.query({ name: "window-management" });
+        const status = await navigator.permissions.query({ name });
         return {
             status,
             result: {
                 state: status.state === "granted" ? "yes" : status.state === "denied" ? "no" : "warn",
                 label: status.state,
-                text: JSON.stringify({ "window-management permission": status.state }, null, 2)
+                text: JSON.stringify({ [`${name} permission`]: status.state }, null, 2)
             }
         };
     } catch (err) {
@@ -27,7 +28,7 @@ export async function checkPermissionState() {
             result: {
                 state: "unknown",
                 label: "unsupported",
-                text: "window-management is not a recognized permission name here: " + err.message
+                text: `${name} is not a recognized permission name here: ` + err.message
             }
         };
     }
