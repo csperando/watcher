@@ -26,6 +26,11 @@ CDP-injection technique used against method 6 — and legitimate hardware
 sometimes reports generic labels too), but it's a check most stealth tooling
 doesn't think to fake specifically.
 
+The label is only useful if it's real, so the `ScreenDetailed.prototype.label`
+getter goes through the same two-part native check as method 6. A spoof that
+swaps the name for a plausible one (e.g. "Generic PnP Monitor") shows up as
+"label spoofed", and so does a `label` shadowed on a screen object.
+
 ## 3. Permissions API state (no prompt)
 
 `navigator.permissions.query({ name: "window-management" })` silently reveals
@@ -63,6 +68,18 @@ native getter, which stringifies as an anonymous `function () { [native
 code] }`. The check also reports whether this page's `toString` itself has
 been replaced (Brave does this legitimately).
 
+A second, independent test doesn't use `toString` at all
+(`scripts/detectors/stackProbe.js`). It calls the getter on an illegal
+receiver (a plain object). Native code rejects that brand check with a
+`TypeError` whose stack has no script frames above the call. A script
+wrapper doesn't: a fake getter just returns its value, and a wrapper or
+`Proxy` that calls through leaves its own `file:line:col` frame on the stack.
+The probe also checks the pristine realm's own references. A tool that
+injects into *every* frame (DevTools' `Page.addScriptToEvaluateOnNewDocument`
+does, as the test VM showed) patches that iframe too. Watcher then reports
+"reference tampered", because nothing else puts code into a blank iframe the
+page just created.
+
 ## 7. Hardware signal: display refresh-rate (vsync) timing
 
 Counts `requestAnimationFrame` callbacks over a fixed window to measure the
@@ -90,13 +107,18 @@ than a real vsync signal.
   or an enterprise policy. A *present but overridden* API is not detectable
   the same way.
 - **The native-code check can still be defeated at a deeper level.** It
-  now resists per-function `toString` lies, page-wide `toString` patches and
-  `Proxy` wrappers by checking against a pristine iframe realm. A spoofer
-  that also reaches into new `about:blank` frames can still defeat it, for
-  example an extension with `match_about_blank`/`all_frames`, or a page
-  script that hooks `createElement`, `appendChild` or `contentWindow` before
-  ours runs. The webcam page checks those hooks too. Beyond that, verifying
-  the verifier never fully terminates.
+  resists per-function `toString` lies, page-wide `toString` patches,
+  `Proxy` wrappers, and spoofs injected into every frame (including the
+  pristine iframe), because the stack-trace probe doesn't depend on
+  `toString`. What's left:
+  - A spoofer can reshape stack traces with `Error.prepareStackTrace` or
+    `Error.stackTraceLimit`. The webcam page reports that as a weak flag.
+  - A spoofer can make its fakes reject illegal receivers without leaving a
+    frame, which is hard in JavaScript but not impossible.
+  - Spoofing below JavaScript entirely (a modified browser build, or a
+    driver) is invisible to any page.
+
+  Beyond that, verifying the verifier never fully terminates.
 - **Cross-signal checks only catch inconsistency, not truth.** If every
   signal is spoofed in agreement, nothing on this page can tell.
 - **Chromium-only for methods 2 and 3.** `getScreenDetails()` and the
@@ -182,7 +204,13 @@ Compares 15 APIs against their pristine-realm copies, using the same
 
 It also flags `getUserMedia`/`enumerateDevices` shadowed on the
 `navigator.mediaDevices` instance, and a patched `Function.prototype.toString`
-(weak, since Brave does this). Once the camera starts, it checks that the
+(weak, since Brave does this). Every function, and the pristine realm's own
+copies, also goes through the toString-independent stack-trace probe (see
+monitor method 6). The promise-returning ones (`getUserMedia`,
+`enumerateDevices`, `applyConstraints`, `permissions.query`) are probed
+asynchronously. A tampered pristine copy is a strong flag ("reference
+tampered"), and altered `Error.prepareStackTrace`/`stackTraceLimit` is weak.
+Once the camera starts, it checks that the
 track comes from a real device: canvas tracks (`requestFrame`/`canvas`) and
 deviceIds missing from `enumerateDevices()` are flagged. This catches
 script injection, not driver-level virtual cameras.
@@ -319,9 +347,14 @@ caution.
 - **The flash test needs cooperation.** Bright rooms, a distant face, or
   aggressive auto white balance weaken the reflection. It also flashes the
   screen, so it must stay opt-in.
-- **The pristine realm can be reached.** An extension injecting into
-  `about:blank` frames, or a script that hooks iframe creation, can patch
-  the pristine copies too. See the monitor page's limitations.
+- **The pristine realm can be reached.** A tool injecting into every frame
+  (confirmed in the test VM with `Page.addScriptToEvaluateOnNewDocument`)
+  patches the pristine copies too. The stealthiest variant shares one
+  patched `toString` across frames and installs on prototypes, so watcher's
+  own camera path then receives the fake stream. The stack-trace probe still
+  catches every patched reference ("reference tampered", a strong flag).
+  Measurements taken through tampered copies can't be trusted, but the
+  verdict still says so.
 - **Tuned on synthetic data.** Thresholds (0.3× noise distance, flat ratio
   1.3, p < 0.005, 40–350 ms delay, 10-level control swing) come from
   simulations. They still need checking against real webcams and real

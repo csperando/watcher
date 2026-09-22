@@ -9,9 +9,13 @@
 //
 // The iframe stays attached: a detached realm's functions can throw.
 // Not bulletproof — an extension injecting into about:blank frames
-// (match_about_blank / all_frames), or a page script hooking iframe
-// creation, can reach this realm too. Those hooks (createElement,
-// appendChild, contentWindow) are in card 3's checked list for that reason.
+// (match_about_blank / all_frames), a DevTools-driven tool using
+// Page.addScriptToEvaluateOnNewDocument (confirmed in the test VM: it runs
+// in this iframe too), or a page script hooking iframe creation can reach
+// this realm. So the references themselves are verified with the
+// toString-independent stack probe (see tamperedPristineReferences() in
+// nativeCode.js), and the iframe-creation hooks (createElement, appendChild,
+// contentWindow) are in the webcam page's checked list.
 let frame = null;
 let cached;
 
@@ -33,6 +37,7 @@ export function getPristine() {
             window: w,
             toString: w.Function.prototype.toString,
             screenIsExtended: getter(w.Screen.prototype, "isExtended"),
+            screenDetailedLabel: w.ScreenDetailed && getter(w.ScreenDetailed.prototype, "label"),
             mediaDevicesGetter: getter(w.Navigator.prototype, "mediaDevices"),
             getUserMedia: w.MediaDevices && w.MediaDevices.prototype.getUserMedia,
             enumerateDevices: w.MediaDevices && w.MediaDevices.prototype.enumerateDevices,

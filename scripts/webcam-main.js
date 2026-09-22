@@ -47,7 +47,7 @@ async function refreshDevices() {
     devices = await listDevices();
     const track = getVideoTrack();
     results.inventory = renderInventoryCard(devices);
-    results.integrity = renderApiIntegrityCard({ track, devices });
+    results.integrity = await renderApiIntegrityCard({ track, devices });
     if (track) {
         results.labels = renderLabelCard(devices, track);
         results.hardware = renderHardwareCard(track, devices);
@@ -98,6 +98,8 @@ function ensureMonitor() {
             refreshSummary();
         }
     });
+    results.monitor = renderMonitorCard(monitor);
+    refreshSummary();
     // Refresh the card's "clean for Ns" and frame counts periodically.
     setInterval(() => {
         results.monitor = renderMonitorCard(monitor);

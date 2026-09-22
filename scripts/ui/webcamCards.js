@@ -32,8 +32,8 @@ export function renderInventoryCard(devices) {
 }
 
 // ---------- 3. Camera API integrity ----------
-export function renderApiIntegrityCard(context) {
-    return renderCard("badge-api", "out-api", detectApiIntegrity(context));
+export async function renderApiIntegrityCard(context) {
+    return renderCard("badge-api", "out-api", await detectApiIntegrity(context));
 }
 
 // ---------- 4. Label hints ----------

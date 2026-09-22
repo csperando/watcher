@@ -5,8 +5,9 @@
 // detector like this one reads pixels through. Driver-level virtual cameras
 // (OBS etc.) go through the genuine native API, so they pass this card —
 // the other cards exist for those.
-import { isNativeFunction, isToStringPatched } from "../nativeCode.js";
+import { isNativeFunction, isToStringPatched, tamperedPristineReferences } from "../nativeCode.js";
 import { getPristine } from "../pristine.js";
+import { probe, stackTampering } from "../stackProbe.js";
 import { trackSettings } from "./stream.js";
 
 function getter(proto, name) {
@@ -36,7 +37,11 @@ function checkedFunctions(md) {
     ];
 }
 
-export function detectApiIntegrity({ track = null, devices = null } = {}) {
+// Promise-returning APIs: isNativeFunction's synchronous behavior probe
+// can't judge these, so they get the async probe (brand-check rejection).
+const ASYNC_KEYS = ["getUserMedia", "enumerateDevices", "applyConstraints", "permissionsQuery"];
+
+export async function detectApiIntegrity({ track = null, devices = null } = {}) {
     const md = navigator.mediaDevices;
     if (!md) {
         return {
@@ -48,12 +53,25 @@ export function detectApiIntegrity({ track = null, devices = null } = {}) {
     }
 
     const pristine = getPristine();
-    const nonNative = checkedFunctions(md)
-        .filter(([, fn, key]) => fn !== undefined || (pristine && pristine[key]))
-        .filter(([, fn, key]) => !isNativeFunction(fn, pristine ? pristine[key] : undefined))
-        .map(([name]) => name);
+    const checked = checkedFunctions(md).filter(([, fn, key]) => fn !== undefined || (pristine && pristine[key]));
+    const nonNative = [];
+    for (const [name, fn, key] of checked) {
+        const sourceAndSyncOk = isNativeFunction(fn, pristine ? pristine[key] : undefined);
+        const asyncOk = !ASYNC_KEYS.includes(key) || (await probe(fn)).native !== false;
+        if (!sourceAndSyncOk || !asyncOk) nonNative.push(name);
+    }
     const shadowed = ["getUserMedia", "enumerateDevices"].filter((name) => Object.prototype.hasOwnProperty.call(md, name));
     const toStringPatched = isToStringPatched();
+
+    // The clean copies themselves: replaced inside the blank iframe this
+    // page created means a script injected into every frame.
+    const pristineTampered = tamperedPristineReferences();
+    if (pristine) {
+        for (const key of ASYNC_KEYS) {
+            if (pristine[key] && (await probe(pristine[key])).native === false) pristineTampered.push(key);
+        }
+    }
+    const stackTricks = stackTampering([window, pristine && pristine.window]);
 
     // Track provenance, once a stream exists. canvas.captureStream() tracks
     // carry `canvas`/`requestFrame`; real capture tracks have a deviceId
@@ -77,6 +95,13 @@ export function detectApiIntegrity({ track = null, devices = null } = {}) {
         flag = "strong";
         note = "A camera or canvas API has been replaced by script. This page reads the camera through " +
             "pristine copies, but whatever the rest of the page sees can't be trusted.";
+    } else if (pristineTampered.length) {
+        state = "no";
+        label = "reference tampered";
+        flag = "strong";
+        note = "The clean reference copies were replaced inside a blank iframe this page created (" +
+            pristineTampered.join(", ") + "). Only a script injected into every frame does that — typical of " +
+            "automation/stealth tooling. Measurements taken through those copies can't be trusted either.";
     } else if (provenance && provenance.canvasSourced) {
         state = "no";
         label = "canvas stream";
@@ -87,6 +112,12 @@ export function detectApiIntegrity({ track = null, devices = null } = {}) {
         label = "inconsistent";
         flag = "weak";
         note = "The track's deviceId is missing or doesn't match any camera in enumerateDevices() — possible stream injection.";
+    } else if (stackTricks.length) {
+        state = "warn";
+        label = "stack traces altered";
+        flag = "weak";
+        note = "Error.prepareStackTrace or Error.stackTraceLimit has been changed from Chrome's defaults, which " +
+            "is how a script would hide its frames from this page's behavior probe.";
     } else if (toStringPatched) {
         state = "warn";
         label = "toString patched";
@@ -117,11 +148,13 @@ export function detectApiIntegrity({ track = null, devices = null } = {}) {
                 shadowedOnInstance: shadowed,
                 pageToStringPatched: toStringPatched,
                 pristineRealm: !!pristine,
+                pristineReferencesTampered: pristineTampered,
+                stackTraceTampering: stackTricks,
                 trackProvenance: provenance,
                 verdict: note
             },
             null, 2
         ),
-        data: { supported: true, flag, nonNative, shadowed, toStringPatched, provenance }
+        data: { supported: true, flag, nonNative, shadowed, toStringPatched, pristineTampered, stackTricks, provenance }
     };
 }

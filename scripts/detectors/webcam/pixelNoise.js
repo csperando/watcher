@@ -106,7 +106,11 @@ export function noiseProfile(frames) {
     if (maxV < 0.05) return null;
     return {
         bins: populated.map((bin) => ({ brightness: bin.brightness, variance: Math.round(bin.variance * 100) / 100 })),
-        ratio: minV > 0 ? maxV / minV : Infinity
+        ratio: minV > 0 ? maxV / minV : Infinity,
+        // Most pixels of a whole brightness band perfectly constant for ~1 s
+        // while other bands move: synthetic content (e.g. a flat drawn
+        // background). A sensor puts noise everywhere.
+        noiseFreeBand: minV === 0
     };
 }
 
@@ -145,6 +149,7 @@ export function analyzePixelNoise(samples, width = 160, height = 120) {
     const { noiseFloor, replays } = findReplays(samples, width, height);
     const profile = identicalRatio > 0.9 ? null : noiseProfile(frames);
     const flatNoise = !!profile && profile.ratio < FLAT_RATIO;
+    const noiseFree = !!profile && profile.noiseFreeBand;
 
     let state, label, flag, note;
     if (identicalRatio > 0.9) {
@@ -162,6 +167,11 @@ export function analyzePixelNoise(samples, width = 160, height = 120) {
         label = "duplicate frames";
         flag = "weak";
         note = "Many frames repeat exactly. The source is re-sending frames at a lower rate than it claims, which is common for virtual cameras.";
+    } else if (noiseFree) {
+        state = "warn";
+        label = "noise-free areas";
+        flag = "weak";
+        note = "Part of the picture has no noise at all from frame to frame. A sensor adds noise everywhere, so those areas look drawn, not filmed. Very aggressive in-camera denoising can also do this.";
     } else if (flatNoise) {
         state = "warn";
         label = "flat noise";
@@ -186,7 +196,9 @@ export function analyzePixelNoise(samples, width = 160, height = 120) {
                 fingerprintNoiseFloor: r3(noiseFloor),
                 replays: replays.length,
                 replayAfterSeconds: replays.slice(0, 5).map((s) => Math.round(s * 100) / 100),
-                noiseProfile: profile ? { ratio: Math.round(profile.ratio * 100) / 100, bins: profile.bins } : "not enough uniform, still area to judge",
+                noiseProfile: profile
+                    ? { ratio: Number.isFinite(profile.ratio) ? Math.round(profile.ratio * 100) / 100 : "∞", noiseFreeBand: profile.noiseFreeBand, bins: profile.bins }
+                    : "not enough uniform, still area to judge",
                 meanBrightness: Math.round(brightness),
                 verdict: note
             },

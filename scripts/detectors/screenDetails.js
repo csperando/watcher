@@ -1,5 +1,7 @@
 // ---------- 2. getScreenDetails() ----------
 import { VM_HINTS } from "./vmSignal.js";
+import { isNativeFunction } from "./nativeCode.js";
+import { getPristine } from "./pristine.js";
 
 export function isScreenDetailsSupported() {
     return "getScreenDetails" in window;
@@ -41,4 +43,18 @@ export function detectLabelHints(screens) {
         }))
         .filter((m) => m.hint);
     return { anyHint: matches.length > 0, matches };
+}
+
+// The label hint above only works if the label is real. A spoof replaces
+// ScreenDetailed.prototype.label's getter (or shadows it on a screen object)
+// to report a plausible name like "Generic PnP Monitor". Same two-part
+// native check as method 6 (nativeCode.js): source text against the
+// pristine realm's getter, plus the toString-independent behavior probe.
+export function checkLabelGetter(screens) {
+    if (!("ScreenDetailed" in window)) return null;
+    const descriptor = Object.getOwnPropertyDescriptor(ScreenDetailed.prototype, "label");
+    const pristine = getPristine();
+    const getterNative = !!descriptor && isNativeFunction(descriptor.get, pristine && pristine.screenDetailedLabel);
+    const shadowedOnScreen = screens.some((s) => Object.prototype.hasOwnProperty.call(s, "label"));
+    return { getterNative, shadowedOnScreen, spoofed: !getterNative || shadowedOnScreen };
 }

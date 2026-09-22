@@ -4,7 +4,8 @@ import {
     requestScreenDetails,
     shapeScreens,
     shapeScreensLive,
-    detectLabelHints
+    detectLabelHints,
+    checkLabelGetter
 } from "../detectors/screenDetails.js";
 import { checkPermissionState } from "../detectors/permissions.js";
 import { detectAvailHeuristic } from "../detectors/availHeuristic.js";
@@ -38,21 +39,25 @@ export function initScreenDetailsCard() {
             const screens = shapeScreens(details.screens);
             const multi = screens.length > 1;
             const hints = detectLabelHints(screens);
+            const labelIntegrity = checkLabelGetter(details.screens);
+            const labelSpoofed = !!(labelIntegrity && labelIntegrity.spoofed);
             setBadge(
                 badge,
-                hints.anyHint ? "warn" : (multi ? "yes" : "no"),
-                hints.anyHint ? "vm label found" : (multi ? `${screens.length} screens` : "1 screen")
+                labelSpoofed || hints.anyHint ? "warn" : (multi ? "yes" : "no"),
+                labelSpoofed ? "label spoofed" : hints.anyHint ? "vm label found" : (multi ? `${screens.length} screens` : "1 screen")
             );
-            out.textContent = JSON.stringify({ screens, vmLabelHint: hints.anyHint ? hints.matches : null }, null, 2);
+            out.textContent = JSON.stringify({ screens, vmLabelHint: hints.anyHint ? hints.matches : null, labelIntegrity }, null, 2);
 
             details.addEventListener("screenschange", () => {
                 const liveScreens = shapeScreensLive(details.screens);
                 const liveHints = detectLabelHints(liveScreens);
-                out.textContent = JSON.stringify({ screens: liveScreens, vmLabelHint: liveHints.anyHint ? liveHints.matches : null }, null, 2);
+                const liveIntegrity = checkLabelGetter(details.screens);
+                const liveSpoofed = !!(liveIntegrity && liveIntegrity.spoofed);
+                out.textContent = JSON.stringify({ screens: liveScreens, vmLabelHint: liveHints.anyHint ? liveHints.matches : null, labelIntegrity: liveIntegrity }, null, 2);
                 setBadge(
                     badge,
-                    liveHints.anyHint ? "warn" : (details.screens.length > 1 ? "yes" : "no"),
-                    liveHints.anyHint ? "vm label found" : `${details.screens.length} screens (live)`
+                    liveSpoofed || liveHints.anyHint ? "warn" : (details.screens.length > 1 ? "yes" : "no"),
+                    liveSpoofed ? "label spoofed" : liveHints.anyHint ? "vm label found" : `${details.screens.length} screens (live)`
                 );
             });
         } catch (err) {

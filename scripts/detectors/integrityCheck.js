@@ -1,5 +1,5 @@
 // ---------- 6. Tamper / spoof detection for isExtended ----------
-import { isNativeFunction, isToStringPatched } from "./nativeCode.js";
+import { isNativeFunction, isToStringPatched, tamperedPristineReferences } from "./nativeCode.js";
 import { getPristine } from "./pristine.js";
 
 // Takes its cross-signal inputs as explicit parameters (rather than reaching
@@ -27,6 +27,7 @@ export function detectIntegrity({ availOffsetDetected, dragMultiDetected }) {
     const pristine = getPristine();
     const looksNative = !!descriptor && isNativeFunction(descriptor.get, pristine && pristine.screenIsExtended);
     const toStringPatched = isToStringPatched();
+    const pristineTampered = tamperedPristineReferences();
 
     // Cross-check isExtended's answer against the independent heuristics
     // gathered elsewhere on this page.
@@ -39,6 +40,12 @@ export function detectIntegrity({ availOffsetDetected, dragMultiDetected }) {
         label = "possibly overridden";
         note = "The isExtended getter is not native code — a browser extension or privacy " +
             "tool may be intercepting it. Its reported value cannot be trusted on its own.";
+    } else if (pristineTampered.length) {
+        state = "warn";
+        label = "reference tampered";
+        note = "The getter passes, but the clean reference copies this check compares against were " +
+            "replaced inside a blank iframe this page created (" + pristineTampered.join(", ") + "). Only a " +
+            "script injected into every frame does that, so something is rewriting built-ins page-wide.";
     } else if (toStringPatched) {
         state = "warn";
         label = "toString patched";
@@ -64,11 +71,12 @@ export function detectIntegrity({ availOffsetDetected, dragMultiDetected }) {
             {
                 getterIsNativeCode: looksNative,
                 pageToStringPatched: toStringPatched,
+                pristineReferencesTampered: pristineTampered,
                 crossCheck: { dragHeuristicDetectedMulti: dragMultiDetected, availOffsetDetected },
                 verdict: note
             },
             null, 2
         ),
-        data: { looksNative, inconsistent, toStringPatched }
+        data: { looksNative, inconsistent, toStringPatched, pristineTampered }
     };
 }
